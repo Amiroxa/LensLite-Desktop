@@ -1,36 +1,57 @@
-using System.Drawing;
+
+using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
-using Tesseract;
+using TesseractOCR;
+using TesseractOCR.Enums;
 
 namespace LensLite;
 
 sealed class Ocr : IDisposable
 {
     readonly string dataPath = Path.Combine(AppContext.BaseDirectory, "tessdata");
-    Engine? engine = null;
-    string? lang = null;
+    Engine? engine;
+    string? engineLang;
 
-    public string Recognize(Bitmap crop, string language)
+    public string Recognize(Bitmap crop, string lang)
     {
-        if (lang != language)
+        if (engine == null || engineLang != lang)
         {
-            this.lang = language;
-            Dispose();
-            var dataPath = Path.Combine(AppContext.BaseDirectory, "tessdata");
-            engine = new Engine(dataPath, language);
+            engine?.Dispose();
+            engine = new Engine(dataPath, lang, EngineMode.LstmOnly);
+            engineLang = lang;
         }
 
+        using var prepared = Prepare(crop);
         using var ms = new MemoryStream();
-        crop.Save(ms, ImageFormat.Png);
-        using var pix = Pix.Image.LoadFromMemory(ms.ToArray());
-        using var page = engine.Process(pix);
+        prepared.Save(ms, ImageFormat.Png);
+        using var img = TesseractOCR.Pix.Image.LoadFromMemory(ms.ToArray());
+        using var page = engine.Process(img, PageSegMode.Auto);
         return Clean(page.Text);
     }
 
-    static string Clean(string raw)
+    static Bitmap Prepare(Bitmap src)
+    {
+        int scale = src.Height < 60 ? 3 : src.Height < 140 ? 2 : 1;
+        const int pad = 10;
+        var dst = new Bitmap(
+            src.Width * scale + 2 * pad,
+            src.Height * scale + 2 * pad,
+            PixelFormat.Format24bppRgb);
+
+        using var g = Graphics.FromImage(dst);
+        g.Clear(Color.White);
+        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        g.DrawImage(src, pad, pad, src.Width * scale, src.Height * scale);
+        return dst;
+    }
+
+    internal static string Clean(string raw)
     {
         var lines = raw.Replace("\r", "").Split('\n')
-            .Select(l => l.TrimEnd().Replace('ي', 'ی').Replace('ك', 'ک'));
+            .Select(l => l.Replace('ي', 'ی').Replace('ك', 'ک')
+                .Replace("‏", "").Replace("‎", "").TrimEnd());
+
         return string.Join(Environment.NewLine, lines).Trim();
     }
 
