@@ -23,7 +23,7 @@ sealed class Ocr : IDisposable
 
         using var prepared = Prepare(crop);
         using var ms = new MemoryStream();
-        prepared.Save(ms, ImageFormat.Png);
+        prepared.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
         using var img = TesseractOCR.Pix.Image.LoadFromMemory(ms.ToArray());
         using var page = engine.Process(img, PageSegMode.Auto);
         return Clean(page.Text);
